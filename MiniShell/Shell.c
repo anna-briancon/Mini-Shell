@@ -56,10 +56,24 @@ do_help(struct Shell *this, const struct StringVector *args)
 }
 
 static void
-do_system(struct Shell *this, const struct StringVector *args)
+do_system( struct Shell *this, const struct StringVector *args )
 {
+    char *file = string_vector_get(args, 1);
+    int tailleChaine = (int)string_vector_size( args );
+    char *m_chaine [tailleChaine-1];
+    
+    for(int i = 0; i<tailleChaine;i++){
+            m_chaine[i] = args->strings[i+1];
+            printf("%s\n",m_chaine[i-1]);
+    }
+    m_chaine[tailleChaine-1] = NULL;
+    if(fork()==0){
+        execvp(file,m_chaine);
+    }
+    int s;
+    wait(&s); 
+    //faire un free
     (void)this;
-    (void)args;
 }
 
 static void
