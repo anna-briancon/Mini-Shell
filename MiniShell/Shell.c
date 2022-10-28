@@ -64,7 +64,6 @@ do_system( struct Shell *this, const struct StringVector *args )
     
     for(int i = 0; i<tailleChaine;i++){
             m_chaine[i] = args->strings[i+1];
-            printf("%s\n",m_chaine[i-1]);
     }
     m_chaine[tailleChaine-1] = NULL;
     if(fork()==0){
