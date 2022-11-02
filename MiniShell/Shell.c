@@ -4,6 +4,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "Shell.h"
 #include "StringVector.h"
@@ -61,14 +64,33 @@ do_system( struct Shell *this, const struct StringVector *args )
     char *file = string_vector_get(args, 1);
     int tailleChaine = (int)string_vector_size( args );
     char *m_chaine [tailleChaine-1];
-    
-    for(int i = 0; i<tailleChaine;i++){
-            m_chaine[i] = args->strings[i+1];
+    bool reponse = false;
+    int i = 0;
+    char *temp[tailleChaine-1];
+    int fd = -1;
+    while( i<tailleChaine-1 && !reponse){
+        temp[i] = args->strings[i+1];
+
+        if(strcmp(temp[i],">")==0){
+                reponse =true;
+            }  else {
+                m_chaine[i]=temp[i];
+            }   
+            i++;         
     }
-    m_chaine[tailleChaine-1] = NULL;
+    m_chaine[i-1] = NULL;
     if(fork()==0){
-        execvp(file,m_chaine);
-    }
+                if(reponse){
+                fd = open(string_vector_get(args, i+1),
+                O_WRONLY| O_CREAT , 0777);
+                dup2(fd, STDOUT_FILENO);
+                execvp(file,m_chaine);
+                close(fd);
+                }
+                else{
+                    execvp(file,m_chaine);
+                }
+   }
     int s;
     wait(&s); 
     //faire un free
