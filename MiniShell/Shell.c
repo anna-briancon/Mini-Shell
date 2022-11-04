@@ -136,12 +136,10 @@ do_cd(struct Shell *this, const struct StringVector *args)
     if (1 == nb_tokens)
     {
         tmp = getenv("HOME");
-        printf("Cas 1: %s\n", tmp);
     }
     else
     {
         tmp = string_vector_get(args, 1);
-        printf("Cas 2: %s\n", tmp);
     }
     int rc = chdir(tmp);
     if (0 != rc)
