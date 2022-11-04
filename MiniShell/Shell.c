@@ -59,41 +59,72 @@ do_help(struct Shell *this, const struct StringVector *args)
 }
 
 static void
-do_system( struct Shell *this, const struct StringVector *args )
+do_outpout(char *fileOut)
+{
+    int fd = open(fileOut,
+                  O_WRONLY | O_CREAT, 0777);
+    if (fd == -1)
+    {
+        write(STDOUT_FILENO, "Error opening file", 19);
+        exit(EXIT_FAILURE);
+    }
+    dup2(fd, STDOUT_FILENO);
+    close(fd);
+}
+
+static void
+do_input(char *fileIn)
+{
+    int fd = open(fileIn,
+                  O_RDONLY, 0777);
+    if (fd == -1)
+    {
+        write(STDOUT_FILENO, "Error opening file", 19);
+        exit(EXIT_FAILURE);
+    }
+    dup2(fd, STDIN_FILENO);
+    close(fd);
+}
+
+static void
+do_system(struct Shell *this, const struct StringVector *args)
 {
     char *file = string_vector_get(args, 1);
-    int tailleChaine = (int)string_vector_size( args );
-    char *m_chaine [tailleChaine-1];
-    bool reponse = false;
+    int stringSize = (int)string_vector_size(args);
+    char *arguments[stringSize - 1];
     int i = 0;
-    char *temp[tailleChaine-1];
-    int fd = -1;
-    while( i<tailleChaine-1 && !reponse){
-        temp[i] = args->strings[i+1];
-
-        if(strcmp(temp[i],">")==0){
-                reponse =true;
-            }  else {
-                m_chaine[i]=temp[i];
-            }   
-            i++;         
-    }
-    m_chaine[i-1] = NULL;
-    if(fork()==0){
-                if(reponse){
-                fd = open(string_vector_get(args, i+1),
-                O_WRONLY| O_CREAT , 0777);
-                dup2(fd, STDOUT_FILENO);
-                execvp(file,m_chaine);
-                close(fd);
-                }
-                else{
-                    execvp(file,m_chaine);
-                }
-   }
+    char *temp[stringSize - 1];
     int s;
-    wait(&s); 
-    //faire un free
+    int end = 0;
+
+    if (fork() == 0)
+    {
+        while (i < stringSize - 1)
+        {
+            temp[i] = args->strings[i + 1];
+
+            if (strcmp(temp[i], ">") == 0)
+            {
+                do_outpout(string_vector_get(args, i + 2));
+                i++;
+            }
+            else if (strcmp(temp[i], "<") == 0)
+            {
+                do_input(string_vector_get(args, i + 2));
+                i++;
+            }
+            else
+            {
+                end = i + 1;
+                arguments[i] = temp[i];
+            }
+            i++;
+        }
+        arguments[end] = NULL;
+        execvp(file, arguments);
+    }
+    wait(&s);
+    // faire un free
     (void)this;
 }
 
@@ -124,6 +155,7 @@ do_pwd(struct Shell *this, const struct StringVector *args)
     char *buf = getcwd(NULL, 0);
     printf("%s\n", buf);
     (void)this;
+    (void)args;
 }
 
 static void
