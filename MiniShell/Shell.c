@@ -5,11 +5,17 @@
 #include <ctype.h>
 #include <assert.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
 #include "Shell.h"
 #include "StringVector.h"
+#include "Job.h"
+
+static int activeJobs = 0;
+#define maxJobs (10);
+static struct Job jobs[maxJobs];
 
 void shell_init(struct Shell *this)
 {
@@ -59,7 +65,7 @@ do_help(struct Shell *this, const struct StringVector *args)
 }
 
 static void
-do_outpout(char *fileOut)
+do_output(char *fileOut)
 {
     int fd = open(fileOut,
                   O_WRONLY | O_CREAT, 0777);
@@ -87,6 +93,25 @@ do_input(char *fileIn)
 }
 
 static void
+fin_fils(int sig)
+{
+    pid_t p = wait(NULL);
+    printf("fin de %d !\n", p);
+
+    for (int i = 0; i < maxJobs; i++)
+    {
+        if (jobs[i].pid == p)
+        {
+            activeJobs--;
+            jobs[i] = jobs[activeJobs];
+            struct Job jobVide = {NULL, NULL};
+            jobs[activeJobs] = jobVide;
+        }
+    }
+    (void)sig;
+}
+
+static void
 do_system(struct Shell *this, const struct StringVector *args)
 {
     char *file = string_vector_get(args, 1);
@@ -94,18 +119,23 @@ do_system(struct Shell *this, const struct StringVector *args)
     char *arguments[stringSize - 1];
     int i = 0;
     char *temp[stringSize - 1];
-    int s;
+
+    if (strcmp(string_vector_get(args, string_vector_size(args) - 1), "&") == 0)
+    {
+        signal(SIGCHLD, fin_fils);
+    }
+
+    int s = fork();
     int end = 0;
 
-    if (fork() == 0)
+    if (s == 0)
     {
         while (i < stringSize - 1)
         {
             temp[i] = args->strings[i + 1];
-
             if (strcmp(temp[i], ">") == 0)
             {
-                do_outpout(string_vector_get(args, i + 2));
+                do_output(string_vector_get(args, i + 2));
                 i++;
             }
             else if (strcmp(temp[i], "<") == 0)
@@ -120,12 +150,37 @@ do_system(struct Shell *this, const struct StringVector *args)
             }
             i++;
         }
+        if (strcmp(string_vector_get(args, string_vector_size(args) - 1), "&") == 0)
+        {
+            end--;
+        }
         arguments[end] = NULL;
         execvp(file, arguments);
     }
-    wait(&s);
+    if (strcmp(string_vector_get(args, string_vector_size(args) - 1), "&") != 0)
+    {
+        wait(&s);
+    }
+    else
+    {
+        char *cmd = malloc(strlen(string_vector_get(args, 1)));
+        strcat(cmd, string_vector_get(args, 1));
+        jobs[activeJobs].pid = s;
+        jobs[activeJobs].command = cmd;
+        activeJobs++;
+    }
     // faire un free
     (void)this;
+}
+
+static void
+do_jobs()
+{
+    printf("Nombre de jobs: %d\n", activeJobs);
+    for (int i = 0; i < activeJobs; i++)
+    {
+        printf("[%d]:   %s\n", jobs[i].pid, jobs[i].command);
+    }
 }
 
 static void
@@ -191,6 +246,7 @@ static struct
                {.name = "?", .action = do_help},
                {.name = "!", .action = do_system},
                {.name = "pwd", .action = do_pwd},
+               {.name = "jobs", .action = do_jobs},
                {.name = NULL, .action = do_execute}};
 
 Action
