@@ -7,14 +7,16 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <signal.h>
 #include <fcntl.h>
 
 #include "Shell.h"
 #include "StringVector.h"
 #include "Job.h"
 
+#define maxJobs (10)
+
 static int activeJobs = 0;
-#define maxJobs (10);
 static struct Job jobs[maxJobs];
 
 void shell_init(struct Shell *this)
@@ -65,6 +67,38 @@ do_help(struct Shell *this, const struct StringVector *args)
 }
 
 static void
+addJob(char* cmd, pid_t pid)
+{
+    jobs[activeJobs].pid = pid;
+    jobs[activeJobs].command = cmd;
+    activeJobs++;
+}
+
+static void
+removeJob(pid_t pid)
+{
+    for (int i = 0; i < maxJobs; i++)
+    {
+        if (jobs[i].pid == pid)
+        {
+            activeJobs--;
+            jobs[i] = jobs[activeJobs];
+            jobs[activeJobs].pid = 0;
+            jobs[activeJobs].command = NULL;
+        }
+    }
+}
+
+static void
+fin_fils(int sig)
+{
+    int status;
+    pid_t pid = waitpid(-1, &status, WNOHANG);
+    removeJob(pid);
+    (void)sig;
+}
+
+static void
 do_output(char *fileOut)
 {
     int fd = open(fileOut,
@@ -93,28 +127,9 @@ do_input(char *fileIn)
 }
 
 static void
-fin_fils(int sig)
-{
-    pid_t p = wait(NULL);
-    printf("fin de %d !\n", p);
-
-    for (int i = 0; i < maxJobs; i++)
-    {
-        if (jobs[i].pid == p)
-        {
-            activeJobs--;
-            jobs[i] = jobs[activeJobs];
-            struct Job jobVide = {NULL, NULL};
-            jobs[activeJobs] = jobVide;
-        }
-    }
-    (void)sig;
-}
-
-static void
 do_system(struct Shell *this, const struct StringVector *args)
 {
-    char *file = string_vector_get(args, 1);
+    char *cmd = string_vector_get(args, 1);
     int stringSize = (int)string_vector_size(args);
     char *arguments[stringSize - 1];
     int i = 0;
@@ -122,13 +137,22 @@ do_system(struct Shell *this, const struct StringVector *args)
 
     if (strcmp(string_vector_get(args, string_vector_size(args) - 1), "&") == 0)
     {
-        signal(SIGCHLD, fin_fils);
+        struct sigaction sa;
+        sa.sa_handler = fin_fils;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        int retval = sigaction(SIGCHLD, &sa, NULL);
+        if (retval < 0)
+        {
+            perror("Echec de sigaction.\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
-    int s = fork();
+    int pid_fils = fork();
     int end = 0;
 
-    if (s == 0)
+    if (pid_fils == 0)
     {
         while (i < stringSize - 1)
         {
@@ -155,19 +179,18 @@ do_system(struct Shell *this, const struct StringVector *args)
             end--;
         }
         arguments[end] = NULL;
-        execvp(file, arguments);
+        execvp(cmd, arguments);
     }
     if (strcmp(string_vector_get(args, string_vector_size(args) - 1), "&") != 0)
     {
-        wait(&s);
+        int status;
+        wait(&status);
     }
     else
     {
         char *cmd = malloc(strlen(string_vector_get(args, 1)));
         strcat(cmd, string_vector_get(args, 1));
-        jobs[activeJobs].pid = s;
-        jobs[activeJobs].command = cmd;
-        activeJobs++;
+        addJob(cmd,pid_fils);
     }
     // faire un free
     (void)this;
